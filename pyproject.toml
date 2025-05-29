@@ -1,0 +1,21 @@
+[project]
+name = "worster-underwood-cfb"
+version = "0.1.0"
+description = "An ensemble college football model system using both power ratings (Underwood) and resume ratings (Worster) to create a composite ranking."
+authors = [
+    {name = "Winston Underwood, Hank Worster"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pandas (>=2.2.3,<3.0.0)",
+    "requests (>=2.32.3,<3.0.0)",
+    "numpy (>=2.2.6,<3.0.0)",
+    "bs4 (>=0.0.2,<0.0.3)",
+    "scipy (>=1.15.3,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
