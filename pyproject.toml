@@ -7,7 +7,7 @@ authors = [
 ]
 
 [tool.poetry]
-package-mode = false
+packages = [{ include = "worster_underwood_cfb" }]
 
 readme = "README.md"
 requires-python = ">=3.13"
