@@ -24,4 +24,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
+nbstripout = "^0.8.1"
+lckr-jupyterlab-variableinspector = "^3.2.4"
+jupyterlab-git = "^0.51.1"
 
