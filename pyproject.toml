@@ -5,6 +5,10 @@ description = "An ensemble college football model system using both power rating
 authors = [
     {name = "Winston Underwood, Hank Worster"}
 ]
+
+[tool.poetry]
+package-mode = false
+
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
