@@ -3,11 +3,13 @@ name = "worster-underwood-cfb"
 version = "0.1.0"
 description = "An ensemble college football model system using both power ratings (Underwood) and resume ratings (Worster) to create a composite ranking."
 authors = [
-    {name = "Winston Underwood, Hank Worster"}
+    {name = "Winston Underwood"}, 
+    {name = "Hank Worster"}
 ]
 
 [tool.poetry]
 packages = [{ include = "worster_underwood_cfb" }]
+
 
 readme = "README.md"
 requires-python = ">=3.13"
