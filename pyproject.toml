@@ -7,10 +7,6 @@ authors = [
     {name = "Hank Worster"}
 ]
 
-[tool.poetry]
-packages = [{ include = "worster_underwood_cfb" }]
-
-
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
