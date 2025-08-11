@@ -10,11 +10,12 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "pandas (>=2.2.3,<3.0.0)",
-    "requests (>=2.32.3,<3.0.0)",
-    "numpy (>=2.2.6,<3.0.0)",
-    "bs4 (>=0.0.2,<0.0.3)",
-    "scipy (>=1.15.3,<2.0.0)"
+    "pandas",
+    "requests",
+    "numpy",
+    "bs4",
+    "scipy",
+    "cfbd"
 ]
 
 
@@ -22,9 +23,11 @@ dependencies = [
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.5"
-nbstripout = "^0.8.1"
-lckr-jupyterlab-variableinspector = "^3.2.4"
-jupyterlab-git = "^0.51.1"
-
+[tool.uv]
+dev-dependencies = [
+  "pytest",
+  "black",
+  "nbstripout",
+  "jupyterlab",
+  "jupyterlab-git",
+]
