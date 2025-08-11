@@ -15,7 +15,8 @@ dependencies = [
     "numpy",
     "bs4",
     "scipy",
-    "cfbd"
+    "cfbd",
+    "python-dotenv>=1.1.1",
 ]
 
 
@@ -30,4 +31,5 @@ dev-dependencies = [
   "nbstripout",
   "jupyterlab",
   "jupyterlab-git",
+  "ipykernel>=6.30.1",
 ]
