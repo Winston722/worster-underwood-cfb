@@ -19,16 +19,28 @@ jobs:
       with:
         python-version: '3.13'
 
-    - name: Install Poetry
-      run: |
-        curl -sSL https://install.python-poetry.org | python3 -
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
+    - name: Install uv
+      run: pip install uv
 
     - name: Install dependencies
-      run: poetry install
+      run: uv sync --frozen
 
     - name: Run tests
-      run: poetry run pytest
+      run: uv run pytest
 
     - name: Build Docker image (just a check)
       run: docker build -t worster-underwood-cfb .
+      
+    - name: Cache uv/venv
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/uv
+          .venv
+        key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+        
+    - name: Run tests
+      run: uv run pytest -q
+      
+    - name: Set environment variables
+      run: echo "CFBD_API_KEY=${{ secrets.CFBD_API_KEY }}" >> $GITHUB_ENV

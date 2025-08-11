@@ -9,8 +9,8 @@ COPY pyproject.toml poetry.lock* ./
 
 # Install Poetry and dependencies
 RUN pip install --no-cache-dir poetry && \
-    poetry config virtualenvs.create false && \
-    poetry install --no-root
+    uv config virtualenvs.create false && \
+    uv install --no-root
 
 # Copy the rest of the project
 COPY . .
