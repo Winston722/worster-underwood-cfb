@@ -8,9 +8,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock* ./
 
 # Install dependency tools and project dependencies
-RUN pip install --no-cache-dir poetry uv && \
-    uv config virtualenvs.create false && \
-    uv install --no-root
+RUN pip install --no-cache-dir uv && \
+    uv sync --no-dev --frozen
 
 # Copy the rest of the project
 COPY . .
