@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir uv
 
 # Copy project metadata first (for caching)
 COPY pyproject.toml uv.lock* ./
+COPY README.md .
 
 # uv prefers copy mode on container filesystems
 ENV UV_LINK_MODE=copy
