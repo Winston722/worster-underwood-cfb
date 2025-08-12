@@ -4,11 +4,11 @@ FROM python:3.13-slim
 # Set working directory
 WORKDIR /app
 
-# Copy Poetry setup files first for layer caching
-COPY pyproject.toml poetry.lock* ./
+# Copy dependency files first for layer caching
+COPY pyproject.toml uv.lock* ./
 
-# Install Poetry and dependencies
-RUN pip install --no-cache-dir poetry && \
+# Install dependency tools and project dependencies
+RUN pip install --no-cache-dir poetry uv && \
     uv config virtualenvs.create false && \
     uv install --no-root
 
