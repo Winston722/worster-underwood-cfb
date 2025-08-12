@@ -33,3 +33,6 @@ dev-dependencies = [
   "jupyterlab-git",
   "ipykernel>=6.30.1",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["worster_underwood_cfb"]
