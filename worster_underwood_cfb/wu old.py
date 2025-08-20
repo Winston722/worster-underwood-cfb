@@ -374,8 +374,8 @@ def get_worster(
     K: int = 15,
 ) -> pd.DataFrame:
     """Rank by current-year keys, then last-year keys (tie-break), with column order matching your original."""
-    cur_sched = prepare_schedule(api_response)
-    ly_sched  = prepare_schedule(ly_api_response)
+    cur_sched = worster_schedule(api_response)
+    ly_sched  = worster_schedule(ly_api_response)
 
     cur_df = create_team_metrics(cur_sched, K=K, prefix="")
     ly_df  = create_team_metrics(ly_sched,  K=K, prefix="ly_")
