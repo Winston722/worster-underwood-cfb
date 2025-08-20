@@ -10,7 +10,7 @@ from cfbd.models.division_classification import DivisionClassification
 from cfbd.models.game import Game
 from cfbd.models.season_type import SeasonType
 from cfbd.rest import ApiException
-from typing import Iterable
+from typing import Iterable, Any
 
 from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import lsqr
