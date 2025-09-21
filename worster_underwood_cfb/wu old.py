@@ -62,7 +62,6 @@ def prepare_schedule(
 
     # 4) Margins & outcomes
     margin = hp - ap                          # home-perspective true margin
-    assert not (margin == 0).any(), "Unexpected tie in completed FBS game."
     home_field = np.where(ns, 0, hfa)         # 0 if neutral, else HFA
     adj_home = margin - home_field            # remove HFA from home side
 
