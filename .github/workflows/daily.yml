@@ -1,0 +1,67 @@
+name: Daily Rankings Update
+
+on:
+  # 9 AM ET (14:00 UTC), August through January only
+  schedule:
+    - cron: "0 14 * 8-12 *"   # Aug – Dec
+    - cron: "0 14 * 1 *"      # Jan  (bowl season / playoff)
+
+  # Manual trigger from the GitHub Actions tab
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Season year (leave blank for current year)"
+        required: false
+        default: ""
+      force_refresh:
+        description: "Force refresh data cache"
+        type: boolean
+        default: true
+
+jobs:
+  update-rankings:
+    runs-on: ubuntu-latest
+
+    env:
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra sheets
+
+      - name: Run batch job
+        run: |
+          ARGS="--force-refresh"
+          if [ -n "${{ github.event.inputs.year }}" ]; then
+            ARGS="$ARGS --year ${{ github.event.inputs.year }}"
+          fi
+          if [ "${{ github.event.inputs.force_refresh }}" = "false" ]; then
+            ARGS="--year ${{ github.event.inputs.year }}"
+          fi
+          uv run python -m batch.main $ARGS
+
+      - name: Report success
+        run: echo "Rankings updated at $(date -u '+%Y-%m-%d %H:%M UTC')"

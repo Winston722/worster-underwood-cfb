@@ -1,0 +1,159 @@
+!pip install cfbd
+
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+import gspread
+import pandas as pd
+import json
+from google.colab import userdata
+import sys
+import os
+os.system("pip install cchardet")
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import io
+from urllib.request import urlretrieve
+import time
+import cfbd
+from pprint import pprint
+from dotenv import load_dotenv
+import numpy as np
+
+
+scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+
+# Hardcoded service account details except the private key
+service_account_info = {
+    "type": "service_account",
+    "project_id": "cfb-ratings-update",
+    "private_key_id": "7eedc4dcf743dfca7a7a74bc387e5a2e94dbfc5e",
+    "private_key": userdata.get('secretName').replace('\\n', '\n'),
+    "client_email": "ratings-shuttle@cfb-ratings-update.iam.gserviceaccount.com",
+    "client_id": "110149605026012892263",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/ratings-shuttle%40cfb-ratings-update.iam.gserviceaccount.com"
+}
+
+credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=scopes)
+service = build('drive', 'v3', credentials=credentials)
+
+# Function to download a file
+def download_file(file_id, file_name):
+    request = service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while done is False:
+        status, done = downloader.next_chunk()
+        print("Download %d%%." % int(status.progress() * 100))
+    fh.seek(0)
+    with open(file_name, 'wb') as f:
+        f.write(fh.read())
+        f.close()
+
+#download FBS.csv
+
+download_file('1uvYykOc26CX_Ywif8c4bHuX-ftgHUchD', 'fbs.csv')
+
+url = "https://raw.githubusercontent.com/Winston722/worster-underwood-cfb/main/worster_underwood_cfb/wu%20old.py"
+urlretrieve(url, "wu_old.py")   # saves to local file
+
+
+from cfbd.models.division_classification import DivisionClassification
+from cfbd.models.game import Game
+from cfbd.models.season_type import SeasonType
+from cfbd.rest import ApiException
+
+load_dotenv()
+# Defining the host is optional and defaults to https://api.collegefootballdata.com
+# See configuration.py for a list of all supported configuration parameters.
+configuration = cfbd.Configuration(
+    host = "https://api.collegefootballdata.com"
+)
+
+# The client must configure the authentication and authorization parameters
+# in accordance with the API server security policy.
+# Examples for each auth method are provided below, use the example that
+# satisfies your auth use case.
+
+# Configure Bearer authorization: apiKey
+configuration = cfbd.Configuration(
+    access_token = userdata.get('CFBD_API_KEY')
+)
+
+with cfbd.ApiClient(configuration) as api_client:
+    # Create an instance of the API class
+    api_instance = cfbd.GamesApi(api_client)
+    year = 2025
+    division = cfbd.DivisionClassification('fbs')
+
+    try:
+        api_response = api_instance.get_games(year=year, classification=division)
+        ly_api_response = api_instance.get_games(year=year-1, classification=division)
+        upcoming = pd.DataFrame([g.to_dict() for g in api_response])
+        upcoming = upcoming[upcoming['awayPoints'].isna()]
+        upcoming = upcoming[['id', 'season', 'week', 'startDate', 'neutralSite', 'homeId', 'awayId', 'homeTeam','awayTeam',]]
+
+    except Exception as e:
+        print("Exception when calling GamesApi->get_games: %s\n" % e)
+
+fbs = pd.read_csv('fbs.csv', encoding="cp1252")
+
+%run wu_old.py
+
+schedule = add_weight(prepare_schedule(api_response))
+ratings = get_ratings(schedule)
+error = get_error(schedule, ratings)
+
+underwood_raw = combined(ratings, error)
+
+underwood = underwood_raw[underwood_raw['team'].isin(fbs['team'])].reset_index(drop = True)
+underwood.insert(loc=0, column='rank', value=range(1,len(underwood.index)+1))
+underwood.columns = ['Rank', 'Team', 'Rating', 'Std Dev']
+underwood.to_csv("underwood.csv",index=False)
+
+
+worster_raw = get_worster(api_response, ly_api_response)
+worster = worster_raw[worster_raw['team'].isin(fbs['team'])].reset_index(drop = True)
+worster.insert(loc=0, column='Rank', value=range(1,len(worster.index)+1))
+worster.to_csv("worster.csv", index=False)
+
+for col in upcoming.select_dtypes(include=['datetime64[ns]', 'datetime64[ns, UTC]']).columns:
+  # Convert each of these columns to a string in a standard format
+  upcoming[col] = upcoming[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+
+
+client = gspread.authorize(credentials)
+
+# Open the Google Sheets file by its ID
+sheet = client.open_by_key('1oLmVWwWZ0YehLhscw6ajfTu5OXO2SsKqd8vyIWshJuo')
+
+# Select the worksheet by title
+worster_shuttle = sheet.worksheet('Worster Shuttle')
+
+# Clear the existing content in the worksheet
+worster_shuttle.clear()
+
+# Update the worksheet with the DataFrame data
+worster_shuttle.update([worster.columns.values.tolist()] + worster.values.tolist())
+
+print("Worster uploaded successfully!")
+
+underwood_shuttle = sheet.worksheet('Underwood Shuttle')
+# Clear the existing content in the worksheet
+underwood_shuttle.clear()
+# Update the worksheet with the DataFrame data
+underwood_shuttle.update([underwood.columns.values.tolist()] + underwood.values.tolist())
+
+print("Underwood uploaded successfully!")
+
+upcoming_shuttle = sheet.worksheet('Upcoming Shuttle')
+# Clear the existing content in the worksheet
+upcoming_shuttle.clear()
+# Update the worksheet with the DataFrame data
+upcoming_shuttle.update([upcoming.columns.values.tolist()] + upcoming.values.tolist())
+
+print("Upcoming uploaded successfully!")

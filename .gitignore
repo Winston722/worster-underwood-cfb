@@ -27,6 +27,8 @@ env/
 *.sqlite
 *.db
 *.pkl
+data/
+output/
 
 # System files
 .DS_Store

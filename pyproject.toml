@@ -20,6 +20,10 @@ dependencies = [
 
 [project.optional-dependencies]
 parquet = ["pyarrow>=15"]
+sheets = [
+    "gspread>=6",
+    "google-auth>=2",
+]
 dev = ["pytest", "black", "nbstripout", "jupyterlab", "ipykernel>=6.30.1"]
 
 [build-system]
