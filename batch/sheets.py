@@ -83,7 +83,10 @@ def write_to_sheets(
     import gspread
 
     if sheet_id is None:
-        sheet_id = os.getenv("GOOGLE_SHEET_ID", _DEFAULT_SHEET_ID)
+        # os.getenv's default only applies when the var is absent, not when
+        # it's set-but-empty — which is exactly what GitHub Actions injects
+        # for a secret that was never configured. Treat both as "not set".
+        sheet_id = os.getenv("GOOGLE_SHEET_ID") or _DEFAULT_SHEET_ID
 
     creds = _get_credentials()
     client = gspread.authorize(creds)
