@@ -5,7 +5,7 @@ import pandas as pd
 from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import lsqr
 
-__all__ = ["get_initial", "get_rating", "get_ratings", "get_error", "combined"]
+__all__ = ["get_initial", "get_rating", "get_ratings", "get_error", "combined", "get_adjusted_rating"]
 
 
 def get_initial(schedule: pd.DataFrame) -> pd.DataFrame:
@@ -176,6 +176,19 @@ def combined(ratings: pd.DataFrame, error: pd.DataFrame) -> pd.DataFrame:
     )
     result.columns = ["team", "rating", "pseudo_sd"]
     return result
+
+
+def get_adjusted_rating(ratings: pd.Series) -> pd.Series:
+    """
+    Scale raw Underwood ratings to [-30, +30] using min-max normalization.
+
+    Formula: ((raw - min) / (max - min)) * 60 - 30
+    Bottom team = -30, top team = +30.
+    """
+    rng = ratings.max() - ratings.min()
+    if rng == 0:
+        return pd.Series(np.zeros(len(ratings)), index=ratings.index)
+    return ((ratings - ratings.min()) / rng) * 60 - 30
 
 
 # ---------------------------------------------------------------------------

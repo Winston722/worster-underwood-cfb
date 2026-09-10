@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-__all__ = ["get_worster"]
+__all__ = ["get_worster", "get_worster_rating"]
 
 
 def _prepare_worster_schedule(df: pd.DataFrame) -> pd.DataFrame:
@@ -175,3 +175,61 @@ def get_worster(
         asc_flags += [False, False]
 
     return joined.sort_values(by=sort_cols, ascending=asc_flags, kind="mergesort").reset_index(drop=True)
+
+
+def get_worster_rating(worster: pd.DataFrame, K: int = 15, r: float = 0.85) -> pd.Series:
+    """
+    Convert a sorted Worster DataFrame into a continuous rating on [-30, +30].
+
+    For each adjacent pair of teams, finds the first sort column where they
+    differ (depth d, 0-indexed: d=0 is 'wins'). Assigns a raw gap of r^d,
+    so teams separated by wins get the largest gap and teams separated deep
+    in the résumé ladder get a much smaller gap.
+
+    Raw gaps are normalized to sum to 60, then stacked from the top so the
+    best team scores +30 and the worst scores -30.
+
+    r=1 produces a uniform linear scale (every adjacent gap is equal),
+    equivalent to evenly spacing teams by rank. Lower r produces steeper
+    tier separation.
+
+    Args:
+        worster: Sorted Worster DataFrame (output of get_worster or FBS-filtered
+                 subset), already in descending rank order.
+        K:       Résumé ladder depth — must match the K used to produce the DataFrame.
+        r:       Decay rate (0 < r <= 1). Default 0.85.
+    """
+    assert 0 < r <= 1, "r must be in (0, 1]"
+
+    sort_cols = ["wins"]
+    for i in range(1, K + 1):
+        sort_cols += [f"wins_from_{i}best", f"wins_from_{i}worst"]
+    sort_cols += ["ly_wins"]
+    for i in range(1, K + 1):
+        sort_cols += [f"ly_wins_from_{i}best", f"ly_wins_from_{i}worst"]
+    sort_cols = [c for c in sort_cols if c in worster.columns]
+
+    n = len(worster)
+    if n == 0:
+        return pd.Series(dtype=float)
+    if n == 1:
+        return pd.Series([0.0], index=worster.index)
+
+    vals = worster[sort_cols].to_numpy()
+    raw_gaps = np.zeros(n - 1)
+    for i in range(n - 1):
+        for d in range(len(sort_cols)):
+            if vals[i, d] != vals[i + 1, d]:
+                raw_gaps[i] = r ** d
+                break
+        # Pairs identical on all columns get gap 0 (same tier)
+
+    total = raw_gaps.sum()
+    scaled_gaps = raw_gaps * 60.0 / total if total > 0 else np.zeros(n - 1)
+
+    scores = np.empty(n)
+    scores[0] = 30.0
+    for i in range(1, n):
+        scores[i] = scores[i - 1] - scaled_gaps[i - 1]
+
+    return pd.Series(scores, index=worster.index)
