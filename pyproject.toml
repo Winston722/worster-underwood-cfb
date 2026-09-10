@@ -24,6 +24,7 @@ sheets = [
     "gspread>=6",
     "google-auth>=2",
 ]
+db = ["psycopg2-binary>=2.9"]
 dev = ["pytest", "black", "nbstripout", "jupyterlab", "ipykernel>=6.30.1"]
 
 [build-system]

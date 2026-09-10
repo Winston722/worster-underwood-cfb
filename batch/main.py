@@ -17,8 +17,7 @@ from worster_underwood_cfb import get_college_football_games
 from batch.model import build_all_outputs
 from batch.sheets import write_to_sheets
 
-# Uncomment when database.py is implemented:
-# from batch.database import write_to_database
+from batch.database import write_to_database
 
 
 def run(year: int | None = None, force_refresh: bool = False) -> None:
@@ -34,17 +33,17 @@ def run(year: int | None = None, force_refresh: bool = False) -> None:
     print(f"  {year}: {len(df)} games | {year - 1}: {len(ly_df)} games")
 
     print("Running models...")
-    underwood, worster, upcoming = build_all_outputs(df, ly_df)
+    underwood, worster, combined, upcoming = build_all_outputs(df, ly_df)
     print(f"  Underwood: {len(underwood)} FBS teams ranked")
     print(f"  Worster:   {len(worster)} FBS teams ranked")
+    print(f"  Combined:  {len(combined)} FBS teams ranked")
     print(f"  Upcoming:  {len(upcoming)} unplayed games")
 
     print("Writing to Google Sheets...")
-    write_to_sheets(underwood, worster, upcoming)
+    write_to_sheets(underwood, worster, combined, upcoming)
 
-    # Uncomment when database.py is implemented:
-    # print("Writing to database...")
-    # write_to_database(underwood, worster, upcoming)
+    print("Writing to database...")
+    write_to_database(underwood, worster, combined, upcoming, year)
 
     print("Done.")
 

@@ -1,7 +1,7 @@
 """
 batch/sheets.py — Google Sheets writer
 
-Handles authentication and writing the three output DataFrames to their
+Handles authentication and writing the four output DataFrames to their
 respective tabs in the target spreadsheet.
 
 Authentication — set ONE of the following in your .env:
@@ -10,6 +10,7 @@ Authentication — set ONE of the following in your .env:
                                    (useful for CI/CD environment secrets)
 
 Sheet structure expected:
+    'WU Shuttle'         — combined WU ratings + disagreement scores
     'Underwood Shuttle'  — power ratings
     'Worster Shuttle'    — résumé rankings
     'Upcoming Shuttle'   — unplayed games
@@ -57,8 +58,11 @@ def _get_credentials():
 
 
 def _write_tab(sheet, tab_name: str, df: pd.DataFrame) -> None:
-    """Clear a worksheet and write a DataFrame to it."""
-    ws = sheet.worksheet(tab_name)
+    """Clear a worksheet and write a DataFrame to it, creating the tab if needed."""
+    try:
+        ws = sheet.worksheet(tab_name)
+    except Exception:
+        ws = sheet.add_worksheet(title=tab_name, rows=500, cols=50)
     ws.clear()
     rows = [df.columns.tolist()] + df.fillna("").astype(str).values.tolist()
     ws.update(rows)
@@ -68,15 +72,17 @@ def _write_tab(sheet, tab_name: str, df: pd.DataFrame) -> None:
 def write_to_sheets(
     underwood: pd.DataFrame,
     worster: pd.DataFrame,
+    combined: pd.DataFrame,
     upcoming: pd.DataFrame,
     sheet_id: str | None = None,
 ) -> None:
     """
-    Write all three output DataFrames to their respective Google Sheets tabs.
+    Write all four output DataFrames to their respective Google Sheets tabs.
 
     Args:
         underwood: Formatted Underwood power ratings.
         worster:   Formatted Worster résumé rankings.
+        combined:  WU combined ratings and disagreement scores.
         upcoming:  Upcoming unplayed games.
         sheet_id:  Google Sheet ID (defaults to the production sheet).
     """
@@ -89,6 +95,7 @@ def write_to_sheets(
     client = gspread.authorize(creds)
     sheet = client.open_by_key(sheet_id)
 
+    _write_tab(sheet, "WU Shuttle", combined)
     _write_tab(sheet, "Underwood Shuttle", underwood)
     _write_tab(sheet, "Worster Shuttle", worster)
     _write_tab(sheet, "Upcoming Shuttle", upcoming)
