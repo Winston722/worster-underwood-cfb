@@ -72,12 +72,17 @@ def get_rating(subject: str, initial: pd.DataFrame) -> float:
     subject_mask = (with_ratings["winner"] == subject) | (with_ratings["loser"] == subject)
     subject_data = with_ratings[subject_mask].copy()
 
-    # Flip margin sign so it's always from subject's perspective
-    subject_data["hfa_margin"] *= np.where(subject_data["winner"] == subject, 1, -1)
-    subject_data.columns = ["team1", "team2", "hfa_margin", "weight", "rating_team1", "rating_team2"]
+    subject_won = (subject_data["winner"] == subject).to_numpy()
+    # Flip margin sign so it's always from subject's perspective, and pick the
+    # opponent's rating (the loser's when subject won, the winner's when subject lost)
+    margin = subject_data["hfa_margin"].to_numpy() * np.where(subject_won, 1, -1)
+    opp_rating = np.where(
+        subject_won,
+        subject_data["coefs_loser"].to_numpy(),
+        subject_data["coefs_winner"].to_numpy(),
+    )
 
-    subject_data["y"] = subject_data["hfa_margin"] + subject_data["rating_team2"]
-    y = subject_data["y"].to_numpy()
+    y = margin + opp_rating
     w = subject_data["weight"].to_numpy()
 
     # Single-variable WLS: x is all 1s, so solution = weighted mean of y
@@ -142,16 +147,19 @@ def get_error(schedule: pd.DataFrame, ratings: pd.DataFrame) -> pd.DataFrame:
 
     error_set = pd.concat([with_ratings, with_ratings2], ignore_index=True).drop(["team2"], axis=1)
 
-    error_sum = pd.DataFrame(
-        error_set.groupby("team1").apply(
-            lambda x: (x["weight"] * x["error"]).sum(), include_groups=False
-        )
-    )
-    error_count = error_set.drop(columns="weight").groupby("team1").count()
-
-    error_total = error_sum.join(error_count, lsuffix="r", rsuffix="l").reset_index()
-    error_total.columns = ["team", "error", "games"]
-    error_total["rmse"] = (error_total["error"] / error_total["games"]) ** 0.5
+    error_set["weighted_error"] = error_set["weight"] * error_set["error"]
+    grouped = error_set.groupby("team1")
+    error_total = pd.DataFrame(
+        {
+            "error": grouped["weighted_error"].sum(),
+            "weight": grouped["weight"].sum(),
+            "games": grouped["error"].count(),
+        }
+    ).reset_index(names="team")
+    # Weighted RMSE: divide by the sum of weights, not the game count, so the
+    # result is invariant to the global weight normalization (which spreads a
+    # fixed total of 100 across however many games have been played so far).
+    error_total["rmse"] = (error_total["error"] / error_total["weight"]) ** 0.5
 
     # Bayesian shrinkage: prior of ~6pt RMSE with pseudo-count of 22 games (≈ full FBS season).
     # Teams with fewer games get pulled toward the prior; full-schedule teams are barely affected.
@@ -159,7 +167,7 @@ def get_error(schedule: pd.DataFrame, ratings: pd.DataFrame) -> pd.DataFrame:
         (error_total["rmse"] * error_total["games"]) + 6 * 22
     ) / (error_total["games"] + 22)
 
-    return error_total.drop(["error", "games", "rmse"], axis=1)
+    return error_total.drop(["error", "weight", "games", "rmse"], axis=1)
 
 
 def combined(ratings: pd.DataFrame, error: pd.DataFrame) -> pd.DataFrame:

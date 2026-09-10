@@ -3,7 +3,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-__all__ = ["get_worster", "get_worster_rating"]
+__all__ = ["get_worster", "get_worster_rating", "NO_LOSS"]
+
+# Sentinel for empty slots in the "teams that beat you" ladder. It must outrank
+# every real win total in the descending sort: a team with no loss at a given
+# depth is strictly better off than a team that lost to even the winningest
+# opponent, so an undefeated team can't be mistaken for one that lost to a
+# 0-win team.
+NO_LOSS = np.iinfo(np.int16).max
 
 
 def _prepare_worster_schedule(df: pd.DataFrame) -> pd.DataFrame:
@@ -92,7 +99,7 @@ def create_team_metrics(schedule: pd.DataFrame, K: int = 15, prefix: str = "") -
     lostto_lists = [winners_sorted[starts_l[i]:ends_l[i]] for i in range(T)]
 
     best = np.zeros((T, K), dtype=np.int16)
-    worst = np.zeros((T, K), dtype=np.int16)
+    worst = np.full((T, K), NO_LOSS, dtype=np.int16)
     for i in range(T):
         if beaten_lists[i].size:
             b = np.sort(wins[beaten_lists[i]])[::-1]  # descending: best beaten opponents first
@@ -151,7 +158,7 @@ def get_worster(
               [f"ly_wins_from_{i}worst" for i in range(1, K + 1)]
     for c in ly_cols:
         if c in joined.columns:
-            joined[c] = joined[c].fillna(0).astype(np.int16)
+            joined[c] = pd.to_numeric(joined[c], errors="coerce").fillna(0).astype(np.int16)
 
     # Enforce column order
     ordered_cols = ["team", "wins", "losses"]

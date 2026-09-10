@@ -33,7 +33,7 @@ jobs:
             ${{ runner.os }}-uv-
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra sheets
 
       - name: Run tests
         run: uv run pytest -q

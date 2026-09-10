@@ -1,20 +1,17 @@
 """
-batch/database.py — Postgres database writer (Vercel Postgres / Neon)
+batch/database.py — Postgres writer
 
-Authentication:
-    Set DATABASE_URL in your .env or environment. The value comes from the
-    Vercel dashboard under Storage → your database → .env.local tab
-    (use the POSTGRES_URL value).
+Writes the four pipeline outputs to the Postgres database the website reads
+(combined_rankings, underwood_rankings, worster_rankings, upcoming_games).
+Each row is stamped with (season, run_date); rewriting the same
+(season, run_date) replaces that run's rows, so the daily job is idempotent
+while history is preserved.
 
-Schema is created automatically on first run via create_tables(). Each daily
-run upserts into the four tables, so historical rows are preserved and the
-latest run for a given (season, run_date) always reflects the most recent data.
+combined_rankings is what the site keys off: getSeasons() reads its distinct
+seasons, so a season absent here is invisible to every page.
 
-Tables:
-    underwood_rankings  — Underwood power ratings
-    worster_rankings    — Worster résumé rankings (top-level columns only)
-    combined_rankings   — WU ensemble ratings + disagreement scores
-    upcoming_games      — Unplayed games with Talent and Competitive indices
+Configuration:
+    DATABASE_URL — Postgres connection string (e.g. a Neon URL).
 """
 from __future__ import annotations
 
@@ -22,217 +19,198 @@ import datetime
 import os
 
 import pandas as pd
-from dotenv import load_dotenv
 
-
-# ---------------------------------------------------------------------------
-# Connection helper
-# ---------------------------------------------------------------------------
-
-def _get_connection():
-    """Open and return a psycopg2 connection using DATABASE_URL."""
-    import psycopg2  # type: ignore
-
-    load_dotenv()
-    url = os.getenv("DATABASE_URL")
-    if not url:
-        raise RuntimeError(
-            "DATABASE_URL is not set. Add it to your .env or environment. "
-            "Find it in the Vercel dashboard under Storage → your database → .env.local "
-            "(use the POSTGRES_URL value)."
-        )
-    return psycopg2.connect(url)
-
-
-# ---------------------------------------------------------------------------
-# Schema
-# ---------------------------------------------------------------------------
-
-_CREATE_TABLES_SQL = """
-CREATE TABLE IF NOT EXISTS underwood_rankings (
-    id              SERIAL PRIMARY KEY,
-    season          SMALLINT    NOT NULL,
-    run_date        DATE        NOT NULL,
-    rank            SMALLINT    NOT NULL,
-    team            TEXT        NOT NULL,
-    adjusted_rating NUMERIC(6,2),
-    rating          NUMERIC(8,4),
-    std_dev         NUMERIC(6,2),
-    UNIQUE (season, run_date, team)
-);
-
-CREATE TABLE IF NOT EXISTS worster_rankings (
-    id              SERIAL PRIMARY KEY,
-    season          SMALLINT    NOT NULL,
-    run_date        DATE        NOT NULL,
-    rank            SMALLINT    NOT NULL,
-    team            TEXT        NOT NULL,
-    adjusted_rating NUMERIC(6,2),
-    wins            SMALLINT,
-    losses          SMALLINT,
-    UNIQUE (season, run_date, team)
-);
-
-CREATE TABLE IF NOT EXISTS combined_rankings (
-    id               SERIAL PRIMARY KEY,
-    season           SMALLINT    NOT NULL,
-    run_date         DATE        NOT NULL,
-    rank             SMALLINT    NOT NULL,
-    team             TEXT        NOT NULL,
-    wu_rating        NUMERIC(6,2),
-    underwood_rating NUMERIC(6,2),
-    worster_rating   NUMERIC(6,2),
-    disagreement     NUMERIC(6,2),
-    UNIQUE (season, run_date, team)
-);
-
-CREATE TABLE IF NOT EXISTS upcoming_games (
-    id           SERIAL PRIMARY KEY,
-    season       SMALLINT    NOT NULL,
-    run_date     DATE        NOT NULL,
-    game_id      BIGINT      NOT NULL,
-    week         SMALLINT,
-    home_team    TEXT,
-    away_team    TEXT,
-    start_date   TEXT,
-    neutral_site BOOLEAN,
-    talent       NUMERIC(5,3),
-    competitive  NUMERIC(5,3),
-    UNIQUE (season, run_date, game_id)
-);
-"""
-
-
-def create_tables() -> None:
+_DDL = [
     """
-    Create all tables if they don't already exist. Safe to call on every run.
-    """
-    conn = _get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(_CREATE_TABLES_SQL)
-        conn.commit()
-    finally:
-        conn.close()
-
-
-# ---------------------------------------------------------------------------
-# Upsert helpers
-# ---------------------------------------------------------------------------
-
-def _upsert(conn, table: str, rows: list[tuple], columns: list[str], conflict_cols: list[str]) -> int:
-    """
-    Bulk-upsert rows into a table. Returns the number of rows affected.
-    Uses INSERT ... ON CONFLICT (...) DO UPDATE so existing rows are refreshed.
-    """
-    if not rows:
-        return 0
-
-    import psycopg2.extras  # type: ignore
-
-    col_list = ", ".join(columns)
-    placeholders = ", ".join(["%s"] * len(columns))
-    conflict = ", ".join(conflict_cols)
-    update_set = ", ".join(
-        f"{c} = EXCLUDED.{c}"
-        for c in columns
-        if c not in conflict_cols
+    CREATE TABLE IF NOT EXISTS underwood_rankings (
+        season          integer          NOT NULL,
+        run_date        date             NOT NULL,
+        rank            integer          NOT NULL,
+        team            text             NOT NULL,
+        adjusted_rating double precision,
+        rating          double precision NOT NULL,
+        std_dev         double precision NOT NULL,
+        PRIMARY KEY (season, run_date, team)
     )
-
-    sql = (
-        f"INSERT INTO {table} ({col_list}) VALUES ({placeholders}) "
-        f"ON CONFLICT ({conflict}) DO UPDATE SET {update_set}"
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS worster_rankings (
+        season          integer NOT NULL,
+        run_date        date    NOT NULL,
+        rank            integer NOT NULL,
+        team            text    NOT NULL,
+        adjusted_rating double precision,
+        wins            integer NOT NULL,
+        losses          integer NOT NULL,
+        PRIMARY KEY (season, run_date, team)
     )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS combined_rankings (
+        season           integer NOT NULL,
+        run_date         date    NOT NULL,
+        rank             integer NOT NULL,
+        team             text    NOT NULL,
+        wu_rating        double precision,
+        underwood_rating double precision,
+        worster_rating   double precision,
+        disagreement     double precision,
+        PRIMARY KEY (season, run_date, team)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS upcoming_games (
+        season       integer     NOT NULL,
+        run_date     date        NOT NULL,
+        game_id      bigint      NOT NULL,
+        week         integer     NOT NULL,
+        home_team    text        NOT NULL,
+        away_team    text        NOT NULL,
+        start_date   timestamptz,
+        neutral_site boolean     NOT NULL,
+        talent       double precision,
+        competitive  double precision,
+        PRIMARY KEY (season, run_date, game_id)
+    )
+    """,
+]
 
-    with conn.cursor() as cur:
-        psycopg2.extras.execute_batch(cur, sql, rows)
-    return len(rows)
+_TABLES = (
+    "underwood_rankings",
+    "worster_rankings",
+    "combined_rankings",
+    "upcoming_games",
+)
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+def _num(value):
+    """Float, or None for missing values — Postgres wants NULL, not NaN."""
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
+
+
+def _to_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return bool(value)
+
+
+def _to_utc_timestamp(value):
+    """Parse a start date; naive values are CFBD UTC wall times, so localize."""
+    if value is None or (isinstance(value, float) and pd.isna(value)) or value == "":
+        return None
+    ts = pd.to_datetime(value)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    return ts.to_pydatetime()
+
+
+def _underwood_rows(df: pd.DataFrame, season: int, run_date: datetime.date) -> list[tuple]:
+    return [
+        (season, run_date, int(r["Rank"]), str(r["Team"]),
+         _num(r["Adjusted Rating"]), float(r["Rating"]), float(r["Std Dev"]))
+        for _, r in df.iterrows()
+    ]
+
+
+def _worster_rows(df: pd.DataFrame, season: int, run_date: datetime.date) -> list[tuple]:
+    return [
+        (season, run_date, int(r["Rank"]), str(r["team"]),
+         _num(r["Adjusted Rating"]),
+         int(r["wins"]), int(r["losses"]))
+        for _, r in df.iterrows()
+    ]
+
+
+def _combined_rows(df: pd.DataFrame, season: int, run_date: datetime.date) -> list[tuple]:
+    return [
+        (season, run_date, int(r["Rank"]), str(r["Team"]),
+         _num(r["WU Rating"]), _num(r["Underwood Rating"]),
+         _num(r["Worster Rating"]), _num(r["Disagreement"]))
+        for _, r in df.iterrows()
+    ]
+
+
+def _upcoming_rows(df: pd.DataFrame, season: int, run_date: datetime.date) -> list[tuple]:
+    return [
+        (season, run_date, int(r["id"]), int(r["week"]),
+         str(r["homeTeam"]), str(r["awayTeam"]),
+         _to_utc_timestamp(r["startDate"]), _to_bool(r["neutralSite"]),
+         _num(r["Talent"]), _num(r["Competitive"]))
+        for _, r in df.iterrows()
+    ]
+
 
 def write_to_database(
     underwood: pd.DataFrame,
     worster: pd.DataFrame,
     combined: pd.DataFrame,
     upcoming: pd.DataFrame,
-    season: int | None = None,
+    season: int,
     run_date: datetime.date | None = None,
+    database_url: str | None = None,
 ) -> None:
     """
-    Upsert all four output DataFrames into the production database.
+    Write rankings and upcoming games to the production database.
 
     Args:
-        underwood: Formatted Underwood power ratings.
-        worster:   Formatted Worster résumé rankings.
-        combined:  WU ensemble ratings and disagreement scores.
-        upcoming:  Upcoming unplayed games with Talent/Competitive indices.
-        season:    Season year (defaults to current calendar year).
-        run_date:  Date of this run (defaults to today).
+        underwood: Formatted Underwood power ratings (Rank, Team, Rating, Std Dev).
+        worster:   Formatted Worster résumé rankings (Rank, team, wins, losses, ...).
+        combined:  WU ensemble ratings (Rank, Team, WU Rating, ..., Disagreement).
+        upcoming:  Upcoming unplayed games (id, season, week, startDate, ...).
+        season:    Season year the rows belong to.
+        run_date:  Defaults to today; rows for the same (season, run_date) are replaced.
+        database_url: Defaults to the DATABASE_URL environment variable.
     """
-    if season is None:
-        season = datetime.datetime.now().year
+    import psycopg  # imported here so the sheets-only path needs no DB driver
+
+    url = database_url or os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set in the environment")
     if run_date is None:
         run_date = datetime.date.today()
 
-    create_tables()
-    conn = _get_connection()
-    try:
-        # --- underwood_rankings ---
-        u_rows = [
-            (season, run_date, int(r["Rank"]), r["Team"],
-             float(r["Adjusted Rating"]), float(r["Rating"]), float(r["Std Dev"]))
-            for _, r in underwood.iterrows()
-        ]
-        n_u = _upsert(conn, "underwood_rankings", u_rows,
-                      ["season", "run_date", "rank", "team", "adjusted_rating", "rating", "std_dev"],
-                      ["season", "run_date", "team"])
+    rows = {
+        "underwood_rankings": _underwood_rows(underwood, season, run_date),
+        "worster_rankings": _worster_rows(worster, season, run_date),
+        "combined_rankings": _combined_rows(combined, season, run_date),
+        "upcoming_games": _upcoming_rows(upcoming, season, run_date),
+    }
+    inserts = {
+        "underwood_rankings": """
+            INSERT INTO underwood_rankings
+                (season, run_date, rank, team, adjusted_rating, rating, std_dev)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        "worster_rankings": """
+            INSERT INTO worster_rankings
+                (season, run_date, rank, team, adjusted_rating, wins, losses)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        "combined_rankings": """
+            INSERT INTO combined_rankings
+                (season, run_date, rank, team, wu_rating,
+                 underwood_rating, worster_rating, disagreement)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        "upcoming_games": """
+            INSERT INTO upcoming_games
+                (season, run_date, game_id, week, home_team, away_team,
+                 start_date, neutral_site, talent, competitive)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+    }
 
-        # --- worster_rankings ---
-        w_rows = [
-            (season, run_date, int(r["Rank"]), r["team"],
-             float(r["Adjusted Rating"]), int(r["wins"]), int(r["losses"]))
-            for _, r in worster.iterrows()
-        ]
-        n_w = _upsert(conn, "worster_rankings", w_rows,
-                      ["season", "run_date", "rank", "team", "adjusted_rating", "wins", "losses"],
-                      ["season", "run_date", "team"])
-
-        # --- combined_rankings ---
-        c_rows = [
-            (season, run_date, int(r["Rank"]), r["Team"],
-             float(r["WU Rating"]), float(r["Underwood Rating"]),
-             float(r["Worster Rating"]), float(r["Disagreement"]))
-            for _, r in combined.iterrows()
-        ]
-        n_c = _upsert(conn, "combined_rankings", c_rows,
-                      ["season", "run_date", "rank", "team", "wu_rating",
-                       "underwood_rating", "worster_rating", "disagreement"],
-                      ["season", "run_date", "team"])
-
-        # --- upcoming_games ---
-        g_rows = [
-            (season, run_date, int(r["id"]), r.get("week"), r["homeTeam"], r["awayTeam"],
-             r.get("startDate"), bool(r.get("neutralSite", False)),
-             None if pd.isna(r["Talent"]) else float(r["Talent"]),
-             None if pd.isna(r["Competitive"]) else float(r["Competitive"]))
-            for _, r in upcoming.iterrows()
-        ]
-        n_g = _upsert(conn, "upcoming_games", g_rows,
-                      ["season", "run_date", "game_id", "week", "home_team", "away_team",
-                       "start_date", "neutral_site", "talent", "competitive"],
-                      ["season", "run_date", "game_id"])
-
-        conn.commit()
-        print(f"  underwood_rankings: {n_u} rows upserted")
-        print(f"  worster_rankings:   {n_w} rows upserted")
-        print(f"  combined_rankings:  {n_c} rows upserted")
-        print(f"  upcoming_games:     {n_g} rows upserted")
-
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    # One transaction: either the whole run lands or none of it does.
+    with psycopg.connect(url) as conn:
+        with conn.cursor() as cur:
+            for ddl in _DDL:
+                cur.execute(ddl)
+            for table in _TABLES:
+                cur.execute(
+                    f"DELETE FROM {table} WHERE season = %s AND run_date = %s",
+                    (season, run_date),
+                )
+                if rows[table]:
+                    cur.executemany(inserts[table], rows[table])

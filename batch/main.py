@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import os
 
 from dotenv import load_dotenv
 
@@ -24,7 +25,10 @@ def run(year: int | None = None, force_refresh: bool = False) -> None:
     load_dotenv()
 
     if year is None:
-        year = datetime.datetime.now().year
+        # The season is named for the year it starts in, but bowls and the CFP
+        # run into January — so before June, "current season" is last year's.
+        now = datetime.datetime.now()
+        year = now.year if now.month >= 6 else now.year - 1
 
     print(f"=== Worster-Underwood CFB | {year} season ===")
 
@@ -42,8 +46,11 @@ def run(year: int | None = None, force_refresh: bool = False) -> None:
     print("Writing to Google Sheets...")
     write_to_sheets(underwood, worster, combined, upcoming)
 
-    print("Writing to database...")
-    write_to_database(underwood, worster, combined, upcoming, year)
+    if os.getenv("DATABASE_URL"):
+        print("Writing to database...")
+        write_to_database(underwood, worster, combined, upcoming, season=year)
+    else:
+        print("DATABASE_URL not set — skipping database write.")
 
     print("Done.")
 
